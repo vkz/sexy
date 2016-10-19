@@ -102,6 +102,11 @@
      (parameterize ([state (new-state)])
        body ...)))
 
+  (begin-for-syntax
+    (define-syntax-rule (with-asm-labels [lbl ...] body ...)
+      (with-syntax ([(lbl ...) (generate-temporaries '(lbl ...))])
+        body ...)))
+
   ;; compile patters to asm
   (define-syntax-rule (char c)
     (list (ch c)))
@@ -115,7 +120,7 @@
   (define-syntax (ord stx)
     (syntax-case stx ()
       [(_ l r)
-       (with-syntax ([(lbl-1 lbl-2) (generate-temporaries '(lbl-1 lbl-2))])
+       (with-asm-labels [lbl-1 lbl-2]
          #'(append (list (choice 'lbl-1))
                    l
                    (list (commit 'lbl-2))
@@ -126,7 +131,7 @@
   (define-syntax (neg stx)
     (syntax-case stx ()
       [(_ p)
-       (with-syntax ([(lbl lbl-fail) (generate-temporaries '(lbl lbl-fail))])
+       (with-asm-labels [lbl lbl-fail]
          #'(append (list (choice 'lbl))
                    p
                    (list (commit 'lbl-fail))
@@ -140,8 +145,7 @@
   (define-syntax (star stx)
     (syntax-case stx ()
       [(_ p)
-       (with-syntax ([(lbl-more lbl-skip) (generate-temporaries
-                                           '(lbl-more lbl-skip))])
+       (with-asm-labels [lbl-more lbl-skip]
          #'(append (list (choice 'lbl-skip))
                    (list (label 'lbl-more))
                    p
