@@ -8,7 +8,6 @@
 ;; | (any)
 ;; | (opt pat)
 ;; | (star pat)
-;; | (plus pat)
 ;; | (seq pat pat)
 ;; | (ord pat pat)
 ;; | (look pat)
@@ -35,6 +34,9 @@
                        state
                        stack))
 
+  (define-struct asm (ops)
+    #:property prop:procedure (λ (self) (asm-ops self))
+    #:transparent)
   (define-struct state (pc i e)
     #:mutable)
 
@@ -52,7 +54,7 @@
     (set-stack-s! stack (list* el (stack))))
   (define (pop stack)
     (set-stack-s! stack (rest (stack))))
-  
+
   (define (new-state)
     (make-state 0 0 (new-stack)))
 
@@ -81,8 +83,16 @@
   ;; parser
   (require (submod ".." asm))
   (require racket/base)
+  (require racket/pretty)
   (provide char
+           any-char
+           seq
+           ord
+           neg
+           look
+           star
            (except-out (all-from-out racket/base) #%module-begin)
+           (all-from-out racket/pretty)
            (rename-out [my-module-begin #%module-begin]))
 
   (define state (make-parameter (new-state)))
@@ -92,11 +102,58 @@
      (parameterize ([state (new-state)])
        body ...)))
 
+  ;; compile patters to asm
   (define-syntax-rule (char c)
-    (ch c)))
+    (list (ch c)))
+
+  (define-syntax-rule (any-char)
+    (list (any)))
+
+  (define-syntax-rule (seq l r)
+    (append l r))
+
+  (define-syntax (ord stx)
+    (syntax-case stx ()
+      [(_ l r)
+       (with-syntax ([(lbl-1 lbl-2) (generate-temporaries '(lbl-1 lbl-2))])
+         #'(append (list (choice 'lbl-1))
+                   l
+                   (list (commit 'lbl-2))
+                   (list (label 'lbl-1))
+                   r
+                   (list (label 'lbl-2))))]))
+
+  (define-syntax (neg stx)
+    (syntax-case stx ()
+      [(_ p)
+       (with-syntax ([(lbl lbl-fail) (generate-temporaries '(lbl lbl-fail))])
+         #'(append (list (choice 'lbl))
+                   p
+                   (list (commit 'lbl-fail))
+                   (list (label 'lbl-fail))
+                   (list (fail))
+                   (list (label 'lbl))))]))
+
+  (define-syntax-rule (look p)
+    (neg (neg p)))
+
+  (define-syntax (star stx)
+    (syntax-case stx ()
+      [(_ p)
+       (with-syntax ([(lbl-more lbl-skip) (generate-temporaries
+                                           '(lbl-more lbl-skip))])
+         #'(append (list (choice 'lbl-skip))
+                   (list (label 'lbl-more))
+                   p
+                   (list (commit 'lbl-more))
+                   (list (label 'lbl-skip))))])))
 
 (module main (submod ".." lang)
-  (define res (char "c"))
-  (println res))
-
-
+  (pretty-print (vector
+                 (char "c")
+                 (any-char)
+                 (seq (char "c") (any-char))
+                 (ord (char "c") (char "d"))
+                 (neg (char "c"))
+                 (look (char "c"))
+                 (star (char "c")))))
